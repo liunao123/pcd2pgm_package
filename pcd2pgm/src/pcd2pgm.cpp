@@ -58,11 +58,10 @@ int main(int argc, char **argv) {
 
   ros::Rate loop_rate(1.0);
 
-  private_nh.param("file_directory", file_directory, std::string("/home/"));
+  private_nh.param("file_name", file_name, std::string("/home/map.pcd"));
 
-  private_nh.param("file_name", file_name, std::string("map"));
-
-  pcd_file = file_directory + file_name + pcd_format;
+  pcd_file = file_name;
+  std::cout << "pcd_file is : " << pcd_file << std::endl;
 
   private_nh.param("thre_z_min", thre_z_min, 0.2);
   private_nh.param("thre_z_max", thre_z_max, 2.0);
@@ -88,7 +87,8 @@ int main(int argc, char **argv) {
   RadiusOutlierFilter(cloud_after_PassThrough, thre_radius, thres_point_count);
   //转换为栅格地图数据并发布
   SetMapTopicMsg(cloud_after_Radius, map_topic_msg);
-  // SetMapTopicMsg(cloud_after_PassThrough, map_topic_msg);
+
+  ROS_WARN("start pub nav_msgs::OccupancyGrid topic . ");
 
   while (ros::ok()) {
     map_topic_pub.publish(map_topic_msg);
@@ -117,8 +117,8 @@ void PassThroughFilter(const double &thre_low, const double &thre_high,
   //执行滤波并存储
   passthrough.filter(*cloud_after_PassThrough);
   // test 保存滤波后的点云到文件
-  pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_filter.pcd",
-                                      *cloud_after_PassThrough);
+  // pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_filter.pcd",
+  //                                     *cloud_after_PassThrough);
   std::cout << "直通滤波后点云数据点数："
             << cloud_after_PassThrough->points.size() << std::endl;
 }
@@ -136,8 +136,8 @@ void RadiusOutlierFilter(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pcd_cloud0,
   radiusoutlier.setMinNeighborsInRadius(thre_count);
   radiusoutlier.filter(*cloud_after_Radius);
   // test 保存滤波后的点云到文件
-  pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_radius_filter.pcd",
-                                      *cloud_after_Radius);
+  // pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_radius_filter.pcd",
+  //                                     *cloud_after_Radius);
   std::cout << "半径滤波后点云数据点数：" << cloud_after_Radius->points.size()
             << std::endl;
 }
@@ -199,7 +199,11 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   msg.info.height = int((y_max - y_min) / map_resolution);
   //实际地图中某点坐标为(x,y)，对应栅格地图中坐标为[x*map.info.width+y]
   msg.data.resize(msg.info.width * msg.info.height);
-  msg.data.assign(msg.info.width * msg.info.height, 0);
+
+  // 设置成 0 就是 生成的图片 底色是 白色
+  // 50 的话，在evo里面和背景色基本一致
+  unsigned char unkown_value = 50;
+  msg.data.assign(msg.info.width * msg.info.height, unkown_value );
 
   ROS_INFO("data size = %d\n", msg.data.size());
 

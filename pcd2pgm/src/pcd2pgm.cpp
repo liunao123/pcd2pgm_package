@@ -72,7 +72,7 @@ int main(int argc, char **argv) {
   private_nh.param("map_topic_name", map_topic_name, std::string("map"));
 
   ros::Publisher map_topic_pub =
-      nh.advertise<nav_msgs::OccupancyGrid>(map_topic_name, 1);
+      nh.advertise<nav_msgs::OccupancyGrid>(map_topic_name, 10, true);
 
   // 下载pcd文件
   if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_file, *pcd_cloud) == -1) {
@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
 
     loop_rate.sleep();
 
-    ros::spinOnce();
+    // ros::spinOnce();
   }
 
   return 0;

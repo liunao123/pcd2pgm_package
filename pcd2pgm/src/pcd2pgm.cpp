@@ -13,6 +13,7 @@
 #include <pcl/filters/statistical_outlier_removal.h> //统计滤波器头文件
 #include <pcl/filters/voxel_grid.h>                  //体素滤波器头文件
 #include <pcl/point_types.h>
+#include <pcl/common/common.h>
 
 #include <pcl/filters/extract_indices.h>
 #include <pcl/ModelCoefficients.h>
@@ -28,7 +29,9 @@ std::string file_name;
 std::string pcd_file;
 double mean_z = 0;
 std::string map_topic_name;
-bool auto_rotation = false;
+int auto_rotation = 0;
+
+double x_min, x_max, y_min, y_max;
 
 const std::string pcd_format = ".pcd";
 
@@ -83,7 +86,7 @@ int main(int argc, char **argv) {
   private_nh.param("map_resolution", map_resolution, 0.05);
   private_nh.param("thres_point_count", thres_point_count, 10);
   private_nh.param("map_topic_name", map_topic_name, std::string("map"));
-  private_nh.param("auto_rotation", auto_rotation, false);
+  private_nh.param("auto_rotation", auto_rotation, 0);
   std::cout << "auto_rotation is : " << auto_rotation << std::endl;
   
 
@@ -96,12 +99,22 @@ int main(int argc, char **argv) {
     return (-1);
   }
 
-  if (auto_rotation)
+  if ( bool( auto_rotation) )
   {
     RotationPcdToHorizon( pcd_cloud );
   }
-  
-  std::cout << "初始点云数据点数：" << pcd_cloud->points.size() << std::endl;
+
+  pcl::PointXYZ minPt, maxPt;
+  pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
+  x_min = minPt.x;
+  x_max = maxPt.x;
+  y_min = minPt.y;
+  y_max = maxPt.y;
+
+  std::cout << " minPt " << x_min << " " << y_min  << std::endl;
+  std::cout << " maxPt " << x_max << " " << y_max  << std::endl;
+
+  std::cout << "初始点云数据点数 " << pcd_cloud->points.size() << std::endl;
   //对数据进行直通滤波
   PassThroughFilter(thre_z_min, thre_z_max, bool(flag_pass_through));
   //对数据进行半径滤波
@@ -175,7 +188,7 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   msg.info.map_load_time = ros::Time::now();
   msg.info.resolution = map_resolution;
 
-  double x_min, x_max, y_min, y_max;
+  // double x_min, x_max, y_min, y_max;
   double z_max_grey_rate = 0.05;
   double z_min_grey_rate = 0.95;
   //? ? ??
@@ -190,25 +203,25 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
     return;
   }
 
-  for (int i = 0; i < cloud->points.size() - 1; i++) {
-    if (i == 0) {
-      x_min = x_max = cloud->points[i].x;
-      y_min = y_max = cloud->points[i].y;
-    }
+  // for (int i = 0; i < cloud->points.size() - 1; i++) {
+  //   if (i == 0) {
+  //     x_min = x_max = cloud->points[i].x;
+  //     y_min = y_max = cloud->points[i].y;
+  //   }
 
-    double x = cloud->points[i].x;
-    double y = cloud->points[i].y;
+  //   double x = cloud->points[i].x;
+  //   double y = cloud->points[i].y;
 
-    if (x < x_min)
-      x_min = x;
-    if (x > x_max)
-      x_max = x;
+  //   if (x < x_min)
+  //     x_min = x;
+  //   if (x > x_max)
+  //     x_max = x;
 
-    if (y < y_min)
-      y_min = y;
-    if (y > y_max)
-      y_max = y;
-  }
+  //   if (y < y_min)
+  //     y_min = y;
+  //   if (y > y_max)
+  //     y_max = y;
+  // }
   // origin的确定
   msg.info.origin.position.x = x_min;
   msg.info.origin.position.y = y_min;
@@ -358,8 +371,8 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   std::cout << "--------------------------------- " << std::endl;
   std::cout << "mean_z: " << mean_z << std::endl;
   std::cout << "--------------------------------- " << std::endl;
-  thre_z_max = mean_z + 0.5;
-  thre_z_min = mean_z - 0.5;
+  // thre_z_max = mean_z + 5;
+  // thre_z_min = mean_z - 5;
 
   for (int i = 0; i < cloud->points.size(); i++)
   {

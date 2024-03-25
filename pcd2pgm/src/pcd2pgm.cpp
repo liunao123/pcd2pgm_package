@@ -99,11 +99,6 @@ int main(int argc, char **argv) {
     return (-1);
   }
 
-  if ( bool( auto_rotation) )
-  {
-    RotationPcdToHorizon( pcd_cloud );
-  }
-
   pcl::PointXYZ minPt, maxPt;
   pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
   x_min = minPt.x;
@@ -111,8 +106,36 @@ int main(int argc, char **argv) {
   y_min = minPt.y;
   y_max = maxPt.y;
 
-  std::cout << " minPt " << x_min << " " << y_min  << std::endl;
-  std::cout << " maxPt " << x_max << " " << y_max  << std::endl;
+  std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
+  std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
+
+  if (minPt.x < 0 || minPt.y < 0 || minPt.z < 0)
+  {
+    std::cout << "Normal pcd to minPt ." << std::endl;
+    for (int i = 0; i < pcd_cloud->points.size(); i++)
+    {
+      pcd_cloud->points[i].x -= minPt.x;
+      pcd_cloud->points[i].y -= minPt.y;
+      pcd_cloud->points[i].z -= minPt.z;
+    }
+    auto normal_file = pcd_file;
+    normal_file.insert(normal_file.size() - 4, "_normal");
+    pcl::io::savePCDFileASCII(normal_file, *pcd_cloud);
+
+    pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
+    x_min = minPt.x;
+    x_max = maxPt.x;
+    y_min = minPt.y;
+    y_max = maxPt.y;
+    std::cout << "minPt and maxPt after Normal pcd to minPt ." << std::endl;
+    std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
+    std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
+  }
+
+  if ( bool( auto_rotation) )
+  {
+    RotationPcdToHorizon( pcd_cloud );
+  }
 
   std::cout << "初始点云数据点数 " << pcd_cloud->points.size() << std::endl;
   //对数据进行直通滤波
@@ -183,7 +206,7 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
                     nav_msgs::OccupancyGrid &msg) {
   msg.header.seq = 0;
   msg.header.stamp = ros::Time::now();
-  msg.header.frame_id = "map";
+  msg.header.frame_id = "base_link";
 
   msg.info.map_load_time = ros::Time::now();
   msg.info.resolution = map_resolution;
@@ -359,7 +382,9 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   extract.setIndices (inliers);
   extract.setNegative (false);   //如果设为true,可以提取指定index之外的点云
   extract.filter (*cloud_p);
-  pcl::io::savePCDFileASCII("/opt/csg/slam/navs/rot_plan.pcd", *cloud_p);
+  auto plan_file = pcd_file;
+  plan_file.insert(plan_file.size() - 4, "_plan");
+  pcl::io::savePCDFileASCII(plan_file, *cloud_p);
 
   // 计算提取出的地面点的 平均高度，后面可以统一减去这个值
   double sum_z = 0;

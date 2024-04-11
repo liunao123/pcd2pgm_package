@@ -24,6 +24,14 @@
 
 #include <Eigen/Core>
 
+#include <iostream>
+#include <fstream>
+#include <vector>
+#include <cstdint>
+#include <cstring>
+#include <png.h>
+
+std::string png_file;
 std::string file_directory;
 std::string file_name;
 std::string pcd_file;
@@ -67,6 +75,8 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud);
 
 
+void saveOccupancyGridMap2png(const nav_msgs::OccupancyGrid& occupancyGrid, const std::string& filename) ;
+
 int main(int argc, char **argv) {
   ros::init(argc, argv, "pcl_filters");
   ros::NodeHandle nh;
@@ -78,6 +88,8 @@ int main(int argc, char **argv) {
 
   pcd_file = file_name;
   std::cout << "pcd_file is : " << pcd_file << std::endl;
+
+  private_nh.param("png_file", png_file, std::string("/home/map_test"));
 
   private_nh.param("thre_z_min", thre_z_min, 0.2);
   private_nh.param("thre_z_max", thre_z_max, 2.0);
@@ -261,7 +273,7 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 
   // 设置成 0 就是 生成的图片 底色是 白色
   // 50 的话，在evo里面和背景色基本一致
-  unsigned char unkown_value = 50;
+  const unsigned char unkown_value = 50;
   msg.data.assign(msg.info.width * msg.info.height, unkown_value );
 
   ROS_INFO("data size = %d\n", msg.data.size());
@@ -279,6 +291,7 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
     //    msg.data[i + j * msg.info.width] = int(255 * (cloud->points[iter].z *
     //    k_line + b_line)) % 255;
   }
+  saveOccupancyGridMap2png(msg, png_file);
 }
 
 
@@ -414,4 +427,100 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   (*cloud) =  flat_cloud;
   std::cout << "--------------- rotation cloud size: " << cloud->points.size() << std::endl;
 
+}
+
+void saveOccupancyGridMap2png(const nav_msgs::OccupancyGrid& occupancyGrid, const std::string& filename) {
+    int width = occupancyGrid.info.width;
+    int height = occupancyGrid.info.height;
+
+    std::string mapdatafile = filename + ".png";
+
+    // 创建一个二维数组来保存占用地图数据
+    std::vector<std::vector<uint8_t>> occupancyData(height, std::vector<uint8_t>(width, 255));
+
+    // 将占用地图数据复制到二维数组中
+    for (int i = 0; i < height; ++i) {
+        for (int j = 0; j < width; ++j) {
+            int index = j + (height - i - 1) * width;
+            int8_t occupancyValue = occupancyGrid.data[index];
+            // printf(" %d ", occupancyValue);
+            if (occupancyValue == 0) {
+                occupancyData[i][j] = 255; // 自由空间为白色
+            } else if (occupancyValue == 100) {
+                occupancyData[i][j] = 0; // 障碍物为黑色
+            } 
+            // else {
+            //     occupancyData[i][j] = 200; // 未知区域为灰色 127
+            // }
+        }
+    }
+
+    // 打开PNG文件进行写入
+    FILE* file = fopen(mapdatafile.c_str(), "wb");
+    if (!file) {
+        std::cout << "无法打开PNG文件" << std::endl;
+        return;
+    }
+
+    // 初始化PNG结构
+    png_structp png = png_create_write_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+    if (!png) {
+        std::cout << "无法创建PNG写入结构" << std::endl;
+        fclose(file);
+        return;
+    }
+
+    // 初始化PNG信息
+    png_infop info = png_create_info_struct(png);
+    if (!info) {
+        std::cout << "无法创建PNG信息结构" << std::endl;
+        png_destroy_write_struct(&png, nullptr);
+        fclose(file);
+        return;
+    }
+
+    // 设置PNG文件IO
+    png_init_io(png, file);
+
+    // 设置PNG图像信息
+    png_set_IHDR(png, info, width, height, 8, PNG_COLOR_TYPE_GRAY, PNG_INTERLACE_NONE, PNG_COMPRESSION_TYPE_DEFAULT, PNG_FILTER_TYPE_DEFAULT);
+
+    // 写入PNG头部
+    png_write_info(png, info);
+
+    // 写入PNG数据
+    std::vector<png_bytep> rowPointers(height);
+    for (int i = 0; i < height; ++i) {
+        rowPointers[i] = reinterpret_cast<png_bytep>(occupancyData[i].data());
+    }
+    png_write_image(png, rowPointers.data());
+
+    // 写入PNG结束
+    png_write_end(png, nullptr);
+
+    // 清理资源
+    png_destroy_write_struct(&png, &info);
+    fclose(file);
+
+    std::cout << "占用地图已保存为PNG文件" << std::endl;
+
+    // 写入对应的 yaml
+    std::string mapmetadatafile = filename + ".yaml";
+    printf("Writing map yaml to %s \n", mapmetadatafile.c_str());
+    FILE* yaml = fopen(mapmetadatafile.c_str(), "w");
+
+    geometry_msgs::Quaternion orientation = occupancyGrid.info.origin.orientation;
+    Eigen::Quaterniond quaternion(orientation.w,orientation.x, orientation.y, orientation.z); // (w, x, y, z)
+    // 将四元数转换为欧拉角表示
+    Eigen::Vector3d euler = quaternion.toRotationMatrix().eulerAngles(2, 1, 0); // ZYX顺序
+
+    // 获取欧拉角的yaw、pitch和roll值
+    double yaw = euler[0];
+    // double pitch = euler[1];
+    // double roll = euler[2];
+
+    fprintf(yaml, "image: %s\nresolution: %f\norigin: [%f, %f, %f]\nnegate: 0\noccupied_thresh: 0.65\nfree_thresh: 0.196\n\n",
+            mapdatafile.c_str(), occupancyGrid.info.resolution, occupancyGrid.info.origin.position.x, occupancyGrid.info.origin.position.y, yaw);
+
+    fclose(yaml);
 }

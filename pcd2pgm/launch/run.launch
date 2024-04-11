@@ -10,10 +10,11 @@
 <!-- pcd文件名称-->
 <!-- <param name="file_name" value= "/home/map/region4-4/1.pcd" /> -->
 <!-- <param name="file_name" value= "/home/map/region4-3/box.pcd" /> -->
-<param name="file_name" value= "/home/liunao/map/region2-1_V2_chedi/region4-3_3rd_chedi/saveMap_ori_horizontal_cut.pcd" />
+<param name="file_name" value= "/home/liunao/map/region2-1_V2_chedi/region4-3_3rd_chedi/saveMap_ori_horizontal_cut_normal.pcd" />
 <!-- <param name="file_name" value= "/opt/csg/slam/navs/livos/result/xn/short/faster_lio_test_pcd_30_cm.pcd" /> -->
 <!-- <param name="file_name" value= "/home/test_h.pcd" /> -->
 
+<param name="png_file" value= "/home/test" />
 <param name="auto_rotation" value= "0" />
 
 

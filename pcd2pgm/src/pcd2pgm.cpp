@@ -111,6 +111,11 @@ int main(int argc, char **argv) {
     return (-1);
   }
 
+  if ( bool( auto_rotation) )
+  {
+    RotationPcdToHorizon( pcd_cloud );
+  }
+  
   pcl::PointXYZ minPt, maxPt;
   pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
   x_min = minPt.x;
@@ -130,6 +135,11 @@ int main(int argc, char **argv) {
       pcd_cloud->points[i].y -= minPt.y;
       pcd_cloud->points[i].z -= minPt.z;
     }
+
+    thre_z_min -= minPt.z;
+    thre_z_max -= minPt.z;
+    std::cout << " 136 normal thre_z_min and thre_z_max is: " << thre_z_min << " " << thre_z_max  << std::endl;
+
     auto normal_file = pcd_file;
     normal_file.insert(normal_file.size() - 4, "_normal");
     pcl::io::savePCDFileASCII(normal_file, *pcd_cloud);
@@ -142,11 +152,6 @@ int main(int argc, char **argv) {
     std::cout << "minPt and maxPt after Normal pcd to minPt ." << std::endl;
     std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
     std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
-  }
-
-  if ( bool( auto_rotation) )
-  {
-    RotationPcdToHorizon( pcd_cloud );
   }
 
   std::cout << "初始点云数据点数 " << pcd_cloud->points.size() << std::endl;

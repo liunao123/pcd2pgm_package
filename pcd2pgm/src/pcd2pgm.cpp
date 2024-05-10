@@ -82,8 +82,6 @@ int main(int argc, char **argv) {
   ros::NodeHandle nh;
   ros::NodeHandle private_nh("~");
 
-  ros::Rate loop_rate(1.0);
-
   private_nh.param("file_name", file_name, std::string("/home/map.pcd"));
 
   pcd_file = file_name;
@@ -104,6 +102,8 @@ int main(int argc, char **argv) {
 
   ros::Publisher map_topic_pub =
       nh.advertise<nav_msgs::OccupancyGrid>(map_topic_name, 10, true);
+
+  ros::Publisher pubNormalMap = nh.advertise<sensor_msgs::PointCloud2>("/normal_map", 10, true);
 
   // 下载pcd文件
   if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_file, *pcd_cloud) == -1) {
@@ -126,33 +126,30 @@ int main(int argc, char **argv) {
   std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
   std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
 
-  if (minPt.x < 0 || minPt.y < 0 || minPt.z < 0)
+  // 归一化 使得三轴的最小值都大于0
+  std::cout << "Normal pcd to minPt ." << std::endl;
+  for (int i = 0; i < pcd_cloud->points.size(); i++)
   {
-    std::cout << "Normal pcd to minPt ." << std::endl;
-    for (int i = 0; i < pcd_cloud->points.size(); i++)
-    {
-      pcd_cloud->points[i].x -= minPt.x;
-      pcd_cloud->points[i].y -= minPt.y;
-      pcd_cloud->points[i].z -= minPt.z;
-    }
-
-    thre_z_min -= minPt.z;
-    thre_z_max -= minPt.z;
-    std::cout << " 136 normal thre_z_min and thre_z_max is: " << thre_z_min << " " << thre_z_max  << std::endl;
-
-    auto normal_file = pcd_file;
-    normal_file.insert(normal_file.size() - 4, "_normal");
-    pcl::io::savePCDFileASCII(normal_file, *pcd_cloud);
-
-    pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
-    x_min = minPt.x;
-    x_max = maxPt.x;
-    y_min = minPt.y;
-    y_max = maxPt.y;
-    std::cout << "minPt and maxPt after Normal pcd to minPt ." << std::endl;
-    std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
-    std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
+    pcd_cloud->points[i].x -= minPt.x;
+    pcd_cloud->points[i].y -= minPt.y;
+    pcd_cloud->points[i].z -= minPt.z;
   }
+
+  std::cout << "normal thre_z_min and thre_z_max is: " << thre_z_min << " " << thre_z_max << std::endl;
+
+  auto normal_file = pcd_file;
+  normal_file.insert(normal_file.size() - 4, "_normal");
+  pcl::io::savePCDFileASCII(normal_file, *pcd_cloud);
+  ROS_WARN("Last map file : %s", normal_file.c_str() );
+
+  pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
+  x_min = minPt.x;
+  x_max = maxPt.x;
+  y_min = minPt.y;
+  y_max = maxPt.y;
+  std::cout << "minPt and maxPt after Normal pcd to minPt ." << std::endl;
+  std::cout << "minPt " << x_min << " " << y_min << " " << minPt.z << std::endl;
+  std::cout << "maxPt " << x_max << " " << y_max << " " << maxPt.z << std::endl;
 
   std::cout << "初始点云数据点数 " << pcd_cloud->points.size() << std::endl;
   //对数据进行直通滤波
@@ -164,11 +161,17 @@ int main(int argc, char **argv) {
 
   ROS_WARN("start pub nav_msgs::OccupancyGrid topic . ");
 
-  while (ros::ok()) {
+  sensor_msgs::PointCloud2  cloudMsg;
+  pcl::toROSMsg(*pcd_cloud, cloudMsg);
+  cloudMsg.header.stamp = ros::Time::now();
+  cloudMsg.header.frame_id = "base_link";
+
+  ros::Rate loop_rate(1.0);
+  while (ros::ok()) 
+  {
     map_topic_pub.publish(map_topic_msg);
-
+    pubNormalMap.publish(cloudMsg);
     loop_rate.sleep();
-
     // ros::spinOnce();
   }
 
@@ -195,7 +198,7 @@ void PassThroughFilter(const double &thre_low, const double &thre_high,
   //                                     *cloud_after_PassThrough);
   std::cout << "直通滤波后点云数据点数："
             << cloud_after_PassThrough->points.size() << std::endl;
-  std::cout << "thre_low, thre_high："
+  std::cout << "thre_low, thre_high: "
             << thre_low << "    " << thre_high << std::endl;
 }
 
@@ -231,7 +234,7 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   // double x_min, x_max, y_min, y_max;
   double z_max_grey_rate = 0.05;
   double z_min_grey_rate = 0.95;
-  //? ? ??
+  // 根据不同的高度赋予不同的灰度 没有用到
   double k_line =
       (z_max_grey_rate - z_min_grey_rate) / (thre_z_max - thre_z_min);
   double b_line =
@@ -243,26 +246,8 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
     return;
   }
 
-  // for (int i = 0; i < cloud->points.size() - 1; i++) {
-  //   if (i == 0) {
-  //     x_min = x_max = cloud->points[i].x;
-  //     y_min = y_max = cloud->points[i].y;
-  //   }
-
-  //   double x = cloud->points[i].x;
-  //   double y = cloud->points[i].y;
-
-  //   if (x < x_min)
-  //     x_min = x;
-  //   if (x > x_max)
-  //     x_max = x;
-
-  //   if (y < y_min)
-  //     y_min = y;
-  //   if (y > y_max)
-  //     y_max = y;
-  // }
   // origin的确定
+  // 使用 点云的范围 归一化后 就是 0 
   msg.info.origin.position.x = x_min;
   msg.info.origin.position.y = y_min;
   msg.info.origin.position.z = 0.0;
@@ -270,6 +255,18 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
   msg.info.origin.orientation.y = 0.0;
   msg.info.origin.orientation.z = 0.0;
   msg.info.origin.orientation.w = 1.0;
+
+  // msg.info.origin.position.x = x_min;
+  // msg.info.origin.position.y = y_min;
+  // msg.info.origin.position.z = 0;
+  // double theta =  std::atan2(y_min, x_min);
+  // printf("origin theta %f \n", theta);
+  // // geometry_msgs::Quaternion quat = tf::createQuaternionMsgFromYaw(theta);
+  // msg.info.origin.orientation.x = 0;
+  // msg.info.origin.orientation.y = 0;
+  // msg.info.origin.orientation.z = std::sin(theta / 2);
+  // msg.info.origin.orientation.w = std::cos(theta / 2);
+
   //设置栅格地图大小
   msg.info.width = int((x_max - x_min) / map_resolution);
   msg.info.height = int((y_max - y_min) / map_resolution);
@@ -315,7 +312,7 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   // 分割方法：随机采样法
   seg.setMethodType(pcl::SAC_RANSAC);
   // 设置误差容忍范围，也就是我说过的阈值
-  seg.setDistanceThreshold(0.03);
+  seg.setDistanceThreshold(0.1);
   // 输入点云
   seg.setInputCloud( cloud );
   // 分割点云
@@ -325,17 +322,6 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   {
     PCL_ERROR("Could not estimate a planar model for the given dataset. EXIT . ");
   }
-
-
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_p(new pcl::PointCloud<pcl::PointXYZ>);
-  // Create the filtering object
-  pcl::ExtractIndices<pcl::PointXYZ> extract;
-  // Extract the inliers
-  extract.setInputCloud (cloud);
-  extract.setIndices (inliers);
-  extract.setNegative (false);   //如果设为true,可以提取指定index之外的点云
-  extract.filter (*cloud_p);
-  pcl::io::savePCDFileASCII("/opt/csg/slam/navs/plan.pcd", *cloud_p);
 
   std::cout << "get planar model size: " << inliers->indices.size() << std::endl;
 
@@ -396,15 +382,7 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   }
   std::cout << "100% ... " << std::endl;
 
-  extract.setInputCloud ( flat_cloud.makeShared() );
-  extract.setIndices (inliers);
-  extract.setNegative (false);   //如果设为true,可以提取指定index之外的点云
-  extract.filter (*cloud_p);
-  auto plan_file = pcd_file;
-  plan_file.insert(plan_file.size() - 4, "_plan");
-  pcl::io::savePCDFileASCII(plan_file, *cloud_p);
-
-  // 计算提取出的地面点的 平均高度，后面可以统一减去这个值
+  // 计算提取出的平面点的 平均高度，后面可以统一减去这个值
   double sum_z = 0;
   for (int i = 0; i < inliers->indices.size(); i++)
   {
@@ -414,13 +392,24 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   std::cout << "--------------------------------- " << std::endl;
   std::cout << "mean_z: " << mean_z << std::endl;
   std::cout << "--------------------------------- " << std::endl;
-  // thre_z_max = mean_z + 5;
-  // thre_z_min = mean_z - 5;
 
-  for (int i = 0; i < cloud->points.size(); i++)
+  for (int i = 0; i < flat_cloud.points.size(); i++)
   {
     flat_cloud.points[i].z -= mean_z;
   }
+
+  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_p(new pcl::PointCloud<pcl::PointXYZ>);
+  // Create the filtering object
+  pcl::ExtractIndices<pcl::PointXYZ> extract;
+  // Extract the inliers
+  // 把归一化后的平面点再提取一次
+  extract.setInputCloud ( flat_cloud.makeShared() );
+  extract.setIndices (inliers);
+  extract.setNegative (false);   //如果设为true,可以提取指定index之外的点云
+  extract.filter (*cloud_p);
+  auto plan_file = pcd_file;
+  plan_file.insert(plan_file.size() - 4, "_plan");
+  pcl::io::savePCDFileASCII(plan_file, *cloud_p);
 
   std::cout << "flat_cloud size: " << flat_cloud.points.size() << std::endl;
 

@@ -22,6 +22,9 @@
 #include <pcl/segmentation/sac_segmentation.h>
 #include <pcl/filters/crop_box.h>
 
+#include <pcl/point_cloud.h>
+#include <pcl/point_types.h>
+
 #include <Eigen/Core>
 
 #include <iostream>
@@ -30,6 +33,9 @@
 #include <cstdint>
 #include <cstring>
 #include <png.h>
+
+using  PointT = pcl::PointXYZRGB;
+// typedef pcl::PointXYZRGB PointT;  // 将 int 类型定义为 myInt
 
 std::string png_file;
 std::string file_directory;
@@ -54,25 +60,25 @@ double thre_radius = 0.1;
 int thres_point_count = 10;
 
 //直通滤波后数据指针
-pcl::PointCloud<pcl::PointXYZ>::Ptr
-    cloud_after_PassThrough(new pcl::PointCloud<pcl::PointXYZ>);
+pcl::PointCloud<PointT>::Ptr
+    cloud_after_PassThrough(new pcl::PointCloud<PointT>);
 //半径滤波后数据指针
-pcl::PointCloud<pcl::PointXYZ>::Ptr
-    cloud_after_Radius(new pcl::PointCloud<pcl::PointXYZ>);
-pcl::PointCloud<pcl::PointXYZ>::Ptr
-    pcd_cloud(new pcl::PointCloud<pcl::PointXYZ>);
+pcl::PointCloud<PointT>::Ptr
+    cloud_after_Radius(new pcl::PointCloud<PointT>);
+pcl::PointCloud<PointT>::Ptr
+    pcd_cloud(new pcl::PointCloud<PointT>);
 
 //直通滤波
 void PassThroughFilter(const double &thre_low, const double &thre_high,
                        const bool &flag_in);
 //半径滤波
-void RadiusOutlierFilter(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pcd_cloud,
+void RadiusOutlierFilter(const pcl::PointCloud<PointT>::Ptr &pcd_cloud,
                          const double &radius, const int &thre_count);
 //转换为栅格地图数据并发布
-void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+void SetMapTopicMsg(const pcl::PointCloud<PointT>::Ptr cloud,
                     nav_msgs::OccupancyGrid &msg);
 
-void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud);
+void RotationPcdToHorizon(pcl::PointCloud<PointT>::Ptr  cloud);
 
 
 void saveOccupancyGridMap2png(const nav_msgs::OccupancyGrid& occupancyGrid, const std::string& filename) ;
@@ -106,7 +112,7 @@ int main(int argc, char **argv) {
   ros::Publisher pubNormalMap = nh.advertise<sensor_msgs::PointCloud2>("/normal_map", 10, true);
 
   // 下载pcd文件
-  if (pcl::io::loadPCDFile<pcl::PointXYZ>(pcd_file, *pcd_cloud) == -1) {
+  if (pcl::io::loadPCDFile<PointT>(pcd_file, *pcd_cloud) == -1) {
     PCL_ERROR("Couldn't read file: %s \n", pcd_file.c_str());
     return (-1);
   }
@@ -116,7 +122,7 @@ int main(int argc, char **argv) {
     RotationPcdToHorizon( pcd_cloud );
   }
   
-  pcl::PointXYZ minPt, maxPt;
+  PointT minPt, maxPt;
   pcl::getMinMax3D(*pcd_cloud, minPt, maxPt);
   x_min = minPt.x;
   x_max = maxPt.x;
@@ -132,7 +138,8 @@ int main(int argc, char **argv) {
   {
     pcd_cloud->points[i].x -= minPt.x;
     pcd_cloud->points[i].y -= minPt.y;
-    pcd_cloud->points[i].z -= minPt.z;
+    // pcd_cloud->points[i].z -= minPt.z;
+    // pcd_cloud->points[i].z =  pcd_cloud->points[i].z - 2.0;
   }
 
   std::cout << "normal thre_z_min and thre_z_max is: " << thre_z_min << " " << thre_z_max << std::endl;
@@ -182,7 +189,7 @@ int main(int argc, char **argv) {
 void PassThroughFilter(const double &thre_low, const double &thre_high,
                        const bool &flag_in) {
   // 创建滤波器对象
-  pcl::PassThrough<pcl::PointXYZ> passthrough;
+  pcl::PassThrough<PointT> passthrough;
   //输入点云
   passthrough.setInputCloud(pcd_cloud);
   //设置对z轴进行操作
@@ -194,7 +201,7 @@ void PassThroughFilter(const double &thre_low, const double &thre_high,
   //执行滤波并存储
   passthrough.filter(*cloud_after_PassThrough);
   // test 保存滤波后的点云到文件
-  // pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_filter.pcd",
+  // pcl::io::savePCDFile<PointT>(file_directory + "map_filter.pcd",
   //                                     *cloud_after_PassThrough);
   std::cout << "直通滤波后点云数据点数："
             << cloud_after_PassThrough->points.size() << std::endl;
@@ -203,10 +210,10 @@ void PassThroughFilter(const double &thre_low, const double &thre_high,
 }
 
 //半径滤波
-void RadiusOutlierFilter(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pcd_cloud0,
+void RadiusOutlierFilter(const pcl::PointCloud<PointT>::Ptr &pcd_cloud0,
                          const double &radius, const int &thre_count) {
   //创建滤波器
-  pcl::RadiusOutlierRemoval<pcl::PointXYZ> radiusoutlier;
+  pcl::RadiusOutlierRemoval<PointT> radiusoutlier;
   //设置输入点云
   radiusoutlier.setInputCloud(pcd_cloud0);
   //设置半径,在该范围内找临近点
@@ -215,14 +222,14 @@ void RadiusOutlierFilter(const pcl::PointCloud<pcl::PointXYZ>::Ptr &pcd_cloud0,
   radiusoutlier.setMinNeighborsInRadius(thre_count);
   radiusoutlier.filter(*cloud_after_Radius);
   // test 保存滤波后的点云到文件
-  // pcl::io::savePCDFile<pcl::PointXYZ>(file_directory + "map_radius_filter.pcd",
+  // pcl::io::savePCDFile<PointT>(file_directory + "map_radius_filter.pcd",
   //                                     *cloud_after_Radius);
   std::cout << "半径滤波后点云数据点数：" << cloud_after_Radius->points.size()
             << std::endl;
 }
 
 //转换为栅格地图数据并发布
-void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
+void SetMapTopicMsg(const pcl::PointCloud<PointT>::Ptr cloud,
                     nav_msgs::OccupancyGrid &msg) {
   msg.header.seq = 0;
   msg.header.stamp = ros::Time::now();
@@ -297,14 +304,14 @@ void SetMapTopicMsg(const pcl::PointCloud<pcl::PointXYZ>::Ptr cloud,
 }
 
 
-void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
+void RotationPcdToHorizon(pcl::PointCloud<PointT>::Ptr  cloud)
 {
   // 创建一个模型参数对象，用于记录结果
   pcl::ModelCoefficients::Ptr coefficients(new pcl::ModelCoefficients);
   // inliers表示误差能容忍的点 记录的是点云的序号
   pcl::PointIndices::Ptr inliers(new pcl::PointIndices);
   // 创建一个分割器
-  pcl::SACSegmentation<pcl::PointXYZ> seg;
+  pcl::SACSegmentation<PointT> seg;
   // Optional，这个设置可以选定结果平面展示的点是分割掉的点还是分割剩下的点。
   seg.setOptimizeCoefficients(true);
   // Mandatory-设置目标几何形状
@@ -312,7 +319,7 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   // 分割方法：随机采样法
   seg.setMethodType(pcl::SAC_RANSAC);
   // 设置误差容忍范围，也就是我说过的阈值
-  seg.setDistanceThreshold(0.1);
+  seg.setDistanceThreshold(0.05);
   // 输入点云
   seg.setInputCloud( cloud );
   // 分割点云
@@ -361,7 +368,7 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   Eigen::Matrix3d ro_matrix = ro_vector.toRotationMatrix();
   // std::cout << "ro_matrix eigen " << ro_matrix << std::endl;
 
-  pcl::PointCloud<pcl::PointXYZ> flat_cloud;
+  pcl::PointCloud<PointT> flat_cloud;
   flat_cloud = *cloud;
   flat_cloud.points.clear();
 
@@ -371,10 +378,13 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
   {
     Eigen::Vector3d newP(cloud->points[i].x, cloud->points[i].y, cloud->points[i].z);
     Eigen::Vector3d new_point = ro_matrix * newP;
-    pcl::PointXYZ pt;
+    PointT pt;
     pt.x = new_point.x();
     pt.y = new_point.y();
     pt.z = new_point.z();
+    pt.r = cloud->points[i].r;
+    pt.g = cloud->points[i].g;
+    pt.b = cloud->points[i].b;
     flat_cloud.points.push_back(pt);
     int process = int(100 * double(i) / cloud->points.size());
     if (i % int(cloud->points.size() / 5) == 0)
@@ -398,9 +408,9 @@ void RotationPcdToHorizon(pcl::PointCloud<pcl::PointXYZ>::Ptr  cloud)
     flat_cloud.points[i].z -= mean_z;
   }
 
-  pcl::PointCloud<pcl::PointXYZ>::Ptr cloud_p(new pcl::PointCloud<pcl::PointXYZ>);
+  pcl::PointCloud<PointT>::Ptr cloud_p(new pcl::PointCloud<PointT>);
   // Create the filtering object
-  pcl::ExtractIndices<pcl::PointXYZ> extract;
+  pcl::ExtractIndices<PointT> extract;
   // Extract the inliers
   // 把归一化后的平面点再提取一次
   extract.setInputCloud ( flat_cloud.makeShared() );
